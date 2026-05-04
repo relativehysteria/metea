@@ -1,14 +1,37 @@
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
+use serde::{Serialize, Deserialize};
 use crate::geocoding::GeoCoding;
+use crate::InternalStorage;
+
+/// State of the application that will be persisted across runs.
+#[derive(Default, Serialize, Deserialize)]
+struct PersistedState {
+    /// Saved places retrieved from the geocoding API.
+    places: HashSet<String>,
+}
+
+impl PersistedState {
+    /// Load the state from the internal storage.
+    fn load(storage: &InternalStorage) -> Option<Self> {
+        let data = std::fs::read(storage.places()).ok()?;
+        serde_json::from_slice(&data).ok()
+    }
+
+    /// Save the state to the internal storage.
+    fn save(&self, storage: &InternalStorage) -> std::io::Result<()> {
+        let data = serde_json::to_vec_pretty(self).unwrap();
+        storage.write_atomic(&storage.places(), &data)
+    }
+}
 
 /// The android metea application.
 pub struct App {
-    /// Application's persistent internal storage which will be used as a cache.
-    internal_storage: Option<PathBuf>,
+    /// Interface to the application's internal storage.
+    internal_storage: InternalStorage,
 
-    /// Vector of places that have been saved by the user.
-    saved_places: HashSet<String>,
+    /// State of the application that is persisted across runs.
+    state: PersistedState,
 
     /// Interface to the open-meteo geocoding API.
     geocoding: GeoCoding,
@@ -18,11 +41,14 @@ impl App {
     /// Create the application state.
     pub fn new(
         _cc: &eframe::CreationContext,
-        internal_storage: Option<PathBuf>,
+        internal_storage: InternalStorage,
     ) -> Self {
+        let state = PersistedState::load(&internal_storage)
+            .unwrap_or_default();
+
         Self {
             internal_storage,
-            saved_places: HashSet::new(),
+            state,
             geocoding: GeoCoding::spawn_background_task(),
         }
     }
@@ -48,7 +74,7 @@ impl eframe::App for App {
 
                 let response = ui.add(input);
 
-                // Save on Enter (when focus is in field)
+                // Save on Enter (when focus is in field).
                 let enter_pressed =
                     ui.input(|i| i.key_pressed(egui::Key::Enter));
 
@@ -70,10 +96,10 @@ impl eframe::App for App {
                     for place in &self.geocoding.search_results {
                         let label = place.to_string();
 
-                        // Result selected; save it and request search result
-                        // clear.
+                        // Result selected; save it and clear the results.
                         if ui.button(&label).clicked() {
-                            self.saved_places.insert(label);
+                            self.state.places.insert(label);
+                            let _ = self.state.save(&self.internal_storage);
                             clear = true;
                             break;
                         }
@@ -88,8 +114,8 @@ impl eframe::App for App {
                 ui.add_space(20.0);
 
                 // Show saved coordinates.
-                if !self.saved_places.is_empty() {
-                    for place in &self.saved_places {
+                if !self.state.places.is_empty() {
+                    for place in &self.state.places {
                         ui.label(egui::RichText::new(place).heading());
                         ui.add_space(10.0);
                     }

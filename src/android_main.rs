@@ -1,3 +1,5 @@
+use crate::InternalStorage;
+
 #[unsafe(no_mangle)]
 pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
     // Initialize the logcat backend.
@@ -7,7 +9,9 @@ pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
 
     // Save the path to the internal app storage. We will pass it to the app and
     // use it to save data.
-    let internal_storage = app.internal_data_path();
+    let internal_storage = app.internal_data_path()
+        .map(|path| InternalStorage::new(path))
+        .expect("Couldn't get internal storage to application");
 
     let options = eframe::NativeOptions {
         android_app: Some(app),
