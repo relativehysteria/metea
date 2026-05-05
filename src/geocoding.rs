@@ -9,7 +9,7 @@ pub struct GeoResponse {
     results: Option<Vec<Place>>,
 }
 
-/// Place information returned from the server.
+/// Place information, returned from the server.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Place {
     /// The name of this place.
@@ -27,7 +27,7 @@ pub struct Place {
 
 impl Place {
     /// Convert the formatted string form to this struct.
-    fn from_string(string: &str) -> Option<Self> {
+    pub fn from_string(string: &str) -> Option<Self> {
         // Split "name (....)"
         let (name_part, rest) = string.split_once(" (")?;
         let name = name_part.trim().to_string();
@@ -58,8 +58,9 @@ impl Place {
         })
     }
 
-    /// Convert this struct into its formatted string form.
-    pub fn to_string(&self) -> String {
+    /// Convert this struct into its formatted string form, including the
+    /// coordinates.
+    pub fn to_string_coords(&self) -> String {
         format!(
             "{} ({} | {}, {})",
             self.name,
@@ -68,10 +69,30 @@ impl Place {
             self.longitude,
         )
     }
+
+    /// Convert this struct into its formatted string form, excluding the
+    /// coordinates.
+    pub fn to_string(&self) -> String {
+        format!(
+            "{} ({})",
+            self.name,
+            self.country.clone().unwrap_or_default(),
+        )
+    }
+
+    /// Get the latitude of this place.
+    pub fn latitude(&self) -> f64 {
+        self.latitude
+    }
+
+    /// Get the longitude of this place.
+    pub fn longitude(&self) -> f64 {
+        self.longitude
+    }
 }
 
-/// The system responsible for sending geocoding requests and receiving
-/// responses from the server.
+/// The system responsible for communicating with the remote open-meteo
+/// geocoding API.
 #[derive(Debug)]
 pub struct GeoCoding {
     /// The transmitting end of the channel where requests are sent to the
@@ -92,13 +113,17 @@ pub struct GeoCoding {
 impl GeoCoding {
     /// Using `request`, get the URL of the endpoint that will service it.
     fn endpoint_url(request: &str) -> String {
-        let partial_url =
-            "http://geocoding-api.open-meteo.com/v1/search?count=10";
+        let params = vec![
+            "count=10".to_string(),
+            format!("name={}", urlencoding::encode(&request)),
+        ];
 
-        format!("{}&name={}", partial_url, urlencoding::encode(&request))
+        format!(
+            "http://geocoding-api.open-meteo.com/v1/search?{}",
+            params.join("&"))
     }
 
-    /// Spawn the background task that will handle networking and return the
+    /// Spawn the background task that will handle networking, and return the
     /// interface that can be used to communicate with the task.
     pub fn spawn_background_task() -> Self {
         // Create the channels for communicating with this task.

@@ -1,7 +1,7 @@
 use std::collections::HashSet;
-use std::path::{PathBuf, Path};
 use serde::{Serialize, Deserialize};
-use crate::geocoding::GeoCoding;
+use crate::geocoding::{GeoCoding, Place};
+use crate::weather::Weather;
 use crate::InternalStorage;
 
 /// State of the application that will be persisted across runs.
@@ -25,6 +25,12 @@ impl PersistedState {
     }
 }
 
+/// The screen that is currently shown.
+enum Screen {
+    Selection,
+    Weather(Place),
+}
+
 /// The android metea application.
 pub struct App {
     /// Interface to the application's internal storage.
@@ -35,6 +41,12 @@ pub struct App {
 
     /// Interface to the open-meteo geocoding API.
     geocoding: GeoCoding,
+
+    /// Interface to the open-meteo weather API.
+    weather: Weather,
+
+    /// The screen that should be currently shown.
+    screen: Screen,
 }
 
 impl App {
@@ -49,8 +61,90 @@ impl App {
         Self {
             internal_storage,
             state,
+            screen: Screen::Selection,
             geocoding: GeoCoding::spawn_background_task(),
+            weather: Weather::spawn_background_task(),
         }
+    }
+
+    /// Draw the weather screen.
+    fn weather_screen(&mut self, ui: &mut egui::Ui, place: Place) {
+        ui.horizontal(|ui| {
+            // Show the place title.
+            ui.vertical_centered(|ui| {
+                let title = egui::RichText::new(place.to_string()).heading();
+                ui.label(title);
+            })
+        });
+    }
+
+    /// Draw the selection screen.
+    fn selection_screen(&mut self, ui: &mut egui::Ui) {
+        // Receive results from the geocoding endpoint.
+        self.geocoding.drain_responses();
+
+        ui.vertical_centered(|ui| {
+            // Create the text input field.
+            let input = egui::TextEdit::singleline(
+                    &mut self.geocoding.current_query)
+                .font(egui::TextStyle::Heading);
+            let text_input = ui.add(input);
+
+            // Save on Enter (when focus is in field).
+            let enter_pressed = ui.input(|i| i.key_pressed(egui::Key::Enter));
+
+            // Once the user presses enter, send the geocoding request.
+            if text_input.lost_focus() && enter_pressed {
+                self.geocoding.send_query();
+                text_input.request_focus();
+            }
+
+            ui.add_space(20.0);
+
+            // If we got some geocoding results, show them and allow the
+            // user selection. Once one result is selected, it is saved and
+            // the results are cleared.
+            let mut clear = text_input.lost_focus();
+            if !self.geocoding.search_results.is_empty() {
+                ui.label("Results:");
+
+                for place in &self.geocoding.search_results {
+                    let place = place.to_string_coords();
+                    let label = egui::RichText::new(&place).heading();
+
+                    // Result selected; save it and clear the results.
+                    if ui.button(label).clicked() {
+                        self.state.places.insert(place);
+                        let _ = self.state.save(&self.internal_storage);
+                        clear = true;
+                        break;
+                    }
+                    ui.add_space(10.0);
+                }
+
+                ui.add_space(10.0);
+                ui.separator();
+
+                // The user has either selected a result or the text input lost
+                // focus; in either case, clear the search results.
+                if clear { self.geocoding.search_results.clear(); }
+            }
+
+            ui.add_space(20.0);
+
+            // Show saved coordinates.
+            if !self.state.places.is_empty() {
+                for place in &self.state.places {
+                    let label = egui::RichText::new(place).heading();
+                    if ui.label(label).clicked() {
+                        self.screen = Screen::Weather(Place::from_string(
+                                place).unwrap());
+                    }
+
+                    ui.add_space(10.0);
+                }
+            }
+        });
     }
 }
 
@@ -62,65 +156,25 @@ impl eframe::App for App {
             ui.set_height(32.0);
         });
 
-        // Receive results from the geocoding endpoint.
-        self.geocoding.drain_responses();
-
         egui::CentralPanel::default().show_inside(ui, |ui| {
-            ui.vertical_centered(|ui| {
-                // Create the text input field.
-                let input = egui::TextEdit::singleline(
-                        &mut self.geocoding.current_query)
-                    .font(egui::TextStyle::Heading);
-
-                let response = ui.add(input);
-
-                // Save on Enter (when focus is in field).
-                let enter_pressed =
-                    ui.input(|i| i.key_pressed(egui::Key::Enter));
-
-                // Once the user presses enter, send the geocoding request.
-                if response.lost_focus() && enter_pressed {
-                    self.geocoding.send_query();
-                    response.request_focus();
-                }
-
-                ui.add_space(20.0);
-
-                // If we got some geocoding results, show them and allow the
-                // user selection. Once one result is selected, it is saved and
-                // the results are cleared.
-                let mut clear = false;
-                if !self.geocoding.search_results.is_empty() {
-                    ui.label("Results:");
-
-                    for place in &self.geocoding.search_results {
-                        let label = place.to_string();
-
-                        // Result selected; save it and clear the results.
-                        if ui.button(&label).clicked() {
-                            self.state.places.insert(label);
-                            let _ = self.state.save(&self.internal_storage);
-                            clear = true;
-                            break;
-                        }
-                    }
-
-                    // The user has selected a result; clear the buffer.
-                    if clear {
-                        self.geocoding.search_results.clear();
-                    }
-                }
-
-                ui.add_space(20.0);
-
-                // Show saved coordinates.
-                if !self.state.places.is_empty() {
-                    for place in &self.state.places {
-                        ui.label(egui::RichText::new(place).heading());
-                        ui.add_space(10.0);
-                    }
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                match &self.screen {
+                    Screen::Selection => self.selection_screen(ui),
+                    Screen::Weather(place) =>
+                        self.weather_screen(ui, place.clone()),
                 }
             });
         });
+    }
+
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if ctx.input(|i| i.key_pressed(egui::Key::BrowserBack)) {
+            match self.screen {
+                // XXX: A very brutal hack for now. Sending a minimize command
+                //      to the viewport doesn't work; I'll figure it out later.
+                Screen::Selection  => std::process::exit(0),
+                Screen::Weather(_) => self.screen = Screen::Selection,
+            }
+        }
     }
 }
