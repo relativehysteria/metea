@@ -69,13 +69,34 @@ impl App {
 
     /// Draw the weather screen.
     fn weather_screen(&mut self, ui: &mut egui::Ui, place: Place) {
+        let place_string = place.to_string_coords();
+
+        // Send the weather query for this place in case we haven't done so yet.
+        if !self.weather.current.contains_key(&place_string) {
+            self.weather.send_query(place.clone(), ui.ctx().clone());
+        }
+
+        // Receive results from the weather endpoint.
+        self.weather.drain_responses();
+
         ui.horizontal(|ui| {
             // Show the place title.
             ui.vertical_centered(|ui| {
                 let title = egui::RichText::new(place.to_string()).heading();
                 ui.label(title);
-            })
+            });
+
+            ui.add_space(20.0);
         });
+
+        // Print the data for now.
+        let hourly = self.weather.current.get(&place_string)
+            .and_then(|o| o.as_ref());
+
+        match hourly {
+            Some(hourly) => { ui.label(format!("{hourly:?}")); },
+            None => {},
+        }
     }
 
     /// Draw the selection screen.

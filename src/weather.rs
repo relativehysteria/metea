@@ -1,7 +1,11 @@
 //! The open-meteo weather API.
 
+// TODO: unfuck all of this.
+
+use std::collections::HashMap;
 use std::sync::mpsc;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
+use chrono::NaiveDateTime;
 use crate::geocoding::Place;
 
 // Wind Speed (10m): Average wind speed at 10 meters above ground.
@@ -45,16 +49,17 @@ struct WeatherData {
 /// Hourly values from the dataset, returned from the server.
 #[derive(Debug, Default, Clone, Deserialize)]
 pub struct Hourly {
-    pub time: Vec<chrono::DateTime<chrono::Utc>>,
-    pub temperature_2m: Vec<f64>,
-    pub apparent_temperature: Vec<f64>,
-    pub wind_speed_10m: Vec<f64>,
-    pub wind_gusts_10m: Vec<f64>,
-    pub precipitation: Vec<f64>,
-    pub dew_point_2m: Vec<f64>,
-    pub cloud_cover_low: Vec<f64>,
-    pub cloud_cover_mid: Vec<f64>,
-    pub cloud_cover_high: Vec<f64>,
+    #[serde(deserialize_with = "deserialize_naive_datetime")]
+    pub time:                 Vec<NaiveDateTime>,
+    pub temperature_2m:       Vec<f32>,
+    pub apparent_temperature: Vec<f32>,
+    pub wind_speed_10m:       Vec<f32>,
+    pub wind_gusts_10m:       Vec<f32>,
+    pub precipitation:        Vec<f32>,
+    pub dew_point_2m:         Vec<f32>,
+    pub cloud_cover_low:      Vec<u8>,
+    pub cloud_cover_mid:      Vec<u8>,
+    pub cloud_cover_high:     Vec<u8>,
 }
 
 impl Hourly {
@@ -72,23 +77,44 @@ impl Hourly {
     }
 }
 
+// TODO: HourlyResult here is a little weird, especially because
+// `Weather.current` doesn't encode anything.
+// Use newtype patterns for `PlaceString` or something like that..
+// Also `HourlyResult` is a bad name.
+
+/// Result sent from the background task back to the weather interface.
+struct HourlyResult {
+    place: String,
+    data: Option<Hourly>,
+}
+
+struct HourlyRequest {
+    place: Place,
+    ctx: egui::Context,
+}
+
 /// The system responsible for communicating with the remote open-meteo
 /// weather API.
 #[derive(Debug)]
 pub struct Weather {
     /// The transmitting end of the channel where requests are sent to the
     /// server.
-    tx: mpsc::Sender<Place>,
+    tx: mpsc::Sender<HourlyRequest>,
 
     /// The receiving end of the channel where responses from the server are
     /// received.
-    rx: mpsc::Receiver<Hourly>,
+    rx: mpsc::Receiver<HourlyResult>,
 
     /// The current dataset.
     ///
     /// This can either be the dataset received from the remote server, or
     /// dataset that was loaded from the disk cache.
-    pub current: Hourly,
+    ///
+    /// The string here is the string representation of a place.
+    ///
+    /// If the value is `None`, it means that we've attempted to send a request
+    /// but received no response.
+    pub current: HashMap<String, Option<Hourly>>,
 }
 
 impl Weather {
@@ -98,8 +124,8 @@ impl Weather {
             "timezone=auto".to_string(),
             "forecast_days=3".to_string(),
             format!("hourly={}", Hourly::url_args()),
-            format!("latitude={:.2}", place.latitude()),
-            format!("longitude={:.2}", place.longitude()),
+            format!("latitude={:.4}", place.latitude()),
+            format!("longitude={:.4}", place.longitude()),
         ];
 
         format!("http://api.open-meteo.com/v1/forecast?{}", params.join("&"))
@@ -109,37 +135,73 @@ impl Weather {
     /// interface that can be used to communicate with the task.
     pub fn spawn_background_task() -> Self {
         // Create the channels for communicating with this task.
-        let (tx_req, rx_req) = mpsc::channel::<Place>();
-        let (tx_res, rx_res) = mpsc::channel::<Hourly>();
+        let (tx_req, rx_req) = mpsc::channel::<HourlyRequest>();
+        let (tx_res, rx_res) = mpsc::channel::<HourlyResult>();
 
         std::thread::spawn(move || {
             // Create the client we will use to make requests.
             let client = reqwest::blocking::Client::new();
 
             // Listen for queries from the app.
-            while let Ok(query) = rx_req.recv() {
+            while let Ok(request) = rx_req.recv() {
+                let place = request.place;
+
                 // Get the endpoint URL for this request.
-                let url = Self::endpoint_url(&query);
+                let url = Self::endpoint_url(&place);
 
                 // Send the request to the server and attempt to parse the json.
                 let result = client.get(url).send()
-                    .and_then(|r| r.json::<WeatherData>());
+                    .and_then(|r| r.json::<WeatherData>())
+                    .ok()
+                    .map(|data| data.hourly);
 
-                // Normalize the dataset in case none were sent.
-                let hourly: Hourly = match result {
-                    Ok(resp) => resp.hourly,
-                    Err(_)   => Hourly::default(),
-                };
+                // Encode the result and send it back to the client.
+                let _ = tx_res.send(HourlyResult {
+                    place: place.to_string_coords(),
+                    data: result,
+                });
 
-                // Send the result back to the application.
-                let _ = tx_res.send(hourly);
+                request.ctx.request_repaint();
             }
         });
 
         Self {
             tx: tx_req,
             rx: rx_res,
-            current: Hourly::default(),
+            current: HashMap::new(),
         }
     }
+
+    /// Send a query for `place` to the server.
+    pub fn send_query(&mut self, place: Place, ctx: egui::Context) {
+        // Save the query to make sure we know that we've sent it.
+        let place_string = place.to_string_coords();
+        self.current.entry(place_string).or_insert(None);
+
+        // Send the query.
+        let _ = self.tx.send(HourlyRequest { place, ctx, });
+    }
+
+    /// Drain responses from the remote server and save them in `self.current`
+    pub fn drain_responses(&mut self) {
+        while let Ok(result) = self.rx.try_recv() {
+            self.current.insert(result.place, result.data);
+        }
+    }
+}
+
+fn deserialize_naive_datetime<'de, D>(
+    deserializer: D
+) -> Result<Vec<NaiveDateTime>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s: Vec<String> = <Vec<String>>::deserialize(deserializer)?;
+
+    s.into_iter()
+        .map(|s| {
+            NaiveDateTime::parse_from_str(&s, "%Y-%m-%dT%H:%M")
+                .map_err(serde::de::Error::custom)
+        })
+        .collect()
 }
