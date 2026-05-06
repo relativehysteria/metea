@@ -181,6 +181,28 @@ impl Weather {
         }
     }
 
+    /// Send a request to the remote server if we don't have this `place` cached
+    /// yet.
+    ///
+    /// `ctx` will be used to request a repaint of the viewport once the
+    /// response (could be an error) is received.
+    pub fn request_if_not_cached(&mut self, place: Place, ctx: egui::Context) {
+        let place_string = place.to_string_coords();
+
+        // Get the current dataset.
+        let current = self.current
+            .entry(place_string.clone())
+            .or_insert(None);
+
+        // If there's one in the cache, don't do anything.
+        if current.is_some() { return; }
+
+        // Only send a request if there's no outgoing request yet.
+        if !self.outgoing.contains(&place_string) {
+            self.send_query(place.clone(), ctx);
+        }
+    }
+
     /// Send a query for `place` to the server.
     pub fn send_query(&mut self, place: Place, ctx: egui::Context) {
         // Keep track of this outgoing query.
