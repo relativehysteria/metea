@@ -14,13 +14,13 @@ pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
         .expect("Couldn't get internal storage to application");
 
     let options = eframe::NativeOptions {
-        android_app: Some(app),
+        android_app: Some(app.clone()),
         ..Default::default()
     };
 
     eframe::run_native(
         "metea",
         options,
-        Box::new(|cc| Ok(Box::new(crate::App::new(cc, internal_storage)))),
+        Box::new(|cc| Ok(Box::new(crate::App::new(cc, internal_storage, app)))),
     ).unwrap()
 }

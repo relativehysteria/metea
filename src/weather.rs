@@ -64,83 +64,71 @@ pub struct Hourly {
 }
 
 impl Hourly {
-    pub fn plot(&self, ui: &mut egui::Ui) {
+    pub fn draw_plots(&self, ui: &mut egui::Ui) {
         let temp = Line::new("temperature",
-            Self::make_points(&self.time, &self.temperature_2m));
+            Self::make_points(&self.temperature_2m));
         let apparent = Line::new("apparent temperature",
-            Self::make_points(&self.time, &self.apparent_temperature));
+            Self::make_points(&self.apparent_temperature));
         let wind_speed = Line::new("wind speed",
-            Self::make_points(&self.time, &self.wind_speed_10m));
+            Self::make_points(&self.wind_speed_10m));
         let wind_gusts = Line::new("wind gusts",
-            Self::make_points(&self.time, &self.wind_gusts_10m));
+            Self::make_points(&self.wind_gusts_10m));
         let precipitation = Line::new("precipitation",
-            Self::make_points(&self.time, &self.precipitation));
+            Self::make_points(&self.precipitation));
         let dew = Line::new("dew point",
-            Self::make_points(&self.time, &self.dew_point_2m));
+            Self::make_points(&self.dew_point_2m));
         let cloud_low = Line::new("cloud cover low",
-            Self::make_points(&self.time, &self.cloud_cover_low));
+            Self::make_points(&self.cloud_cover_low));
         let cloud_mid = Line::new("cloud cover mid",
-            Self::make_points(&self.time, &self.cloud_cover_mid));
+            Self::make_points(&self.cloud_cover_mid));
         let cloud_high = Line::new("cloud cover high",
-            Self::make_points(&self.time, &self.cloud_cover_high));
+            Self::make_points(&self.cloud_cover_high));
 
-        Plot::new("temperature")
-            .legend(Legend::default())
-            .height(200.0)
-            .show(ui, |ui| {
-                ui.line(temp);
-                ui.line(apparent);
-            });
+        Self::plot("temperature").show(ui, |ui| {
+            ui.line(temp);
+            ui.line(apparent);
+        });
 
-        Plot::new("wind")
-            .legend(Legend::default())
-            .height(200.0)
-            .show(ui, |ui| {
-                ui.line(wind_speed);
-                ui.line(wind_gusts);
-            });
+        Self::plot("wind").show(ui, |ui| {
+            ui.line(wind_speed);
+            ui.line(wind_gusts);
+        });
 
-        Plot::new("precipitation")
-            .legend(Legend::default())
-            .height(150.0)
-            .show(ui, |ui| {
-                ui.line(precipitation);
-            });
+        Self::plot("precipitation").show(ui, |ui| {
+            ui.line(precipitation);
+        });
 
-        Plot::new("dew point")
-            .legend(Legend::default())
-            .height(150.0)
-            .show(ui, |ui| {
-                ui.line(dew);
-            });
+        Self::plot("dew point").show(ui, |ui| {
+            ui.line(dew);
+        });
 
-        Plot::new("cloud low")
-            .legend(Legend::default())
-            .height(150.0)
-            .show(ui, |ui| {
-                ui.line(cloud_low);
-            });
-
-        Plot::new("cloud mid")
-            .legend(Legend::default())
-            .height(150.0)
-            .show(ui, |ui| {
-                ui.line(cloud_mid);
-            });
-
-        Plot::new("cloud high")
-            .legend(Legend::default())
-            .height(150.0)
-            .show(ui, |ui| {
-                ui.line(cloud_high);
-            });
+        Self::plot("cloud low").show(ui, |ui| {
+            ui.line(cloud_low);
+            ui.line(cloud_mid);
+            ui.line(cloud_high);
+        });
     }
 
-    fn make_points<'a>(times: &'a [NaiveDateTime], values: &'a [f32])
-            -> PlotPoints<'a> {
-        times.iter().zip(values.iter()).map(|(t, v)| {
-            // Use timestamp as X axis
-            [t.and_utc().timestamp() as f64, *v as f64]
+    fn plot<'a>(name: &'a str) -> Plot<'a> {
+        // TODO: show every 6 hours
+
+        Plot::new(name)
+            .legend(Legend::default())
+            .height(200.0)
+            .allow_axis_zoom_drag(false)
+            .allow_zoom(false)
+            .allow_scroll(false)
+            .allow_drag(false)
+            .sense(egui::Sense::empty())
+            .x_axis_formatter(|x, _| {
+                let hour = x.value as i64 % 24;
+                format!("{:02}:00", hour)
+            })
+    }
+
+    fn make_points<'a>(values: &'a [f32]) -> PlotPoints<'a> {
+        values.iter().enumerate().map(|(idx, value)| {
+            [idx as f64, *value as f64]
         }).collect()
     }
 }

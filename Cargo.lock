@@ -1453,6 +1453,7 @@ dependencies = [
  "eframe",
  "egui",
  "egui_plot",
+ "jni",
  "log",
  "reqwest",
  "serde",

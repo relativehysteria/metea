@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use serde::{Serialize, Deserialize};
+use winit::platform::android::activity::AndroidApp;
 use crate::geocoding::{GeoCoding, Place};
 use crate::weather::Weather;
 use crate::InternalStorage;
@@ -48,6 +49,12 @@ pub struct App {
 
     /// The screen that should be currently shown.
     screen: Screen,
+
+    /// Handle to the application.
+    ///
+    /// Will be used to, for example, minimize the app, because sending a
+    /// minimize command to the viewport doesn't work :/
+    app: AndroidApp,
 }
 
 impl App {
@@ -55,6 +62,7 @@ impl App {
     pub fn new(
         _cc: &eframe::CreationContext,
         internal_storage: InternalStorage,
+        app: AndroidApp,
     ) -> Self {
         let state = PersistedState::load(&internal_storage)
             .unwrap_or_default();
@@ -62,6 +70,7 @@ impl App {
         Self {
             internal_storage,
             state,
+            app,
             screen: Screen::Selection,
             geocoding: GeoCoding::spawn_background_task(),
             weather: Weather::spawn_background_task(),
@@ -101,7 +110,7 @@ impl App {
             .and_then(|o| o.as_ref());
 
         match hourly {
-            Some(hourly) => { hourly.plot(ui) },
+            Some(hourly) => { hourly.draw_plots(ui) },
             None => {},
         }
     }
@@ -174,6 +183,39 @@ impl App {
             }
         });
     }
+
+    // TODO: Figure out a better way if possible.
+    /// Minimize the window by moving the task to back of the activity stack.
+    fn minimize(&mut self) {
+        let app = self.app.clone();
+
+        // Get access to the JVM.
+        let vm = unsafe { jni::JavaVM::from_raw(app.vm_as_ptr().cast()) };
+
+        // Attach the current thread, get the activity and call
+        // `moveTaskToBack()` safely.
+        let r = vm.attach_current_thread(|env| -> jni::errors::Result<()> {
+            let activity = unsafe {
+                jni::objects::JObject::from_raw(
+                    &env,
+                    app.activity_as_ptr().cast(),
+                )
+            };
+
+            env.call_method(
+                activity,
+                jni::jni_str!("moveTaskToBack"),
+                jni::jni_sig!((bool) -> bool),
+                &[jni::objects::JValue::Bool(true)],
+            )?;
+
+            Ok(())
+        });
+
+        if let Err(e) = r {
+            error!("Failed to move task to back: {e:?}");
+        }
+    }
 }
 
 impl eframe::App for App {
@@ -198,9 +240,10 @@ impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if ctx.input(|i| i.key_pressed(egui::Key::BrowserBack)) {
             match self.screen {
-                // XXX: A very brutal hack for now. Sending a minimize command
-                //      to the viewport doesn't work; I'll figure it out later.
-                Screen::Selection  => std::process::exit(0),
+                // NOTE: As far as I know, we can't choose to not catch the
+                // `BrowserBack` action -- we always have to -- so Android
+                // doesn't minimize the window for us. We'll do it ourselves.
+                Screen::Selection  => self.minimize(),
                 Screen::Weather(_) => self.screen = Screen::Selection,
             }
         }
