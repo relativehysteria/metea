@@ -161,7 +161,12 @@ impl Weather {
                     data: result,
                 });
 
+                // Request a repaint. This is a little bit of a hack; the first
+                // request may trigger a repaint before the result is received,
+                // so we're waging that the second one will trigger it more
+                // correctly.
                 request.ctx.request_repaint();
+                request.ctx.request_repaint_after_secs(0.5);
             }
         });
 
@@ -190,6 +195,8 @@ impl Weather {
     }
 }
 
+/// Deserialize the time strings returned from the server as a vector of
+/// datetimes.
 fn deserialize_naive_datetime<'de, D>(
     deserializer: D
 ) -> Result<Vec<NaiveDateTime>, D::Error>

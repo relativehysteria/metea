@@ -7,6 +7,7 @@ use crate::InternalStorage;
 /// State of the application that will be persisted across runs.
 #[derive(Default, Serialize, Deserialize)]
 struct PersistedState {
+    // TODO: This should be newtyped.
     /// Saved places retrieved from the geocoding API.
     places: HashSet<String>,
 }
@@ -79,15 +80,22 @@ impl App {
         // Receive results from the weather endpoint.
         self.weather.drain_responses();
 
-        ui.horizontal(|ui| {
-            // Show the place title.
-            ui.vertical_centered(|ui| {
-                let title = egui::RichText::new(place.to_string()).heading();
-                ui.label(title);
-            });
+        // Show the place title.
+        ui.vertical_centered(|ui| {
+            let title = egui::RichText::new(place.to_string()).heading();
+            let title = ui.label(title);
 
-            ui.add_space(20.0);
+            // Show a popup to let the user mutate the place, e.g. remove it.
+            egui::Popup::menu(&title).align(egui::RectAlign::BOTTOM).show(|ui| {
+                if ui.button("REMOVE").clicked() {
+                    self.state.places.remove(&place_string);
+                    let _ = self.state.save(&self.internal_storage);
+                    self.screen = Screen::Selection;
+                }
+            });
         });
+
+        ui.add_space(20.0);
 
         // Print the data for now.
         let hourly = self.weather.current.get(&place_string)
