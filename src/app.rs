@@ -72,9 +72,16 @@ impl App {
     fn weather_screen(&mut self, ui: &mut egui::Ui, place: Place) {
         let place_string = place.to_string_coords();
 
-        // Send the weather query for this place in case we haven't done so yet.
-        if !self.weather.current.contains_key(&place_string) {
-            self.weather.send_query(place.clone(), ui.ctx().clone());
+        // If we don't have the dataset cached yet, request it from the API.
+        let current = self.weather.current
+            .entry(place_string.clone())
+            .or_insert(None);
+
+        if current.is_none() {
+            // Only send a request if there's no outgoing request yet.
+            if !self.weather.outgoing.contains(&place_string) {
+                self.weather.send_query(place.clone(), ui.ctx().clone());
+            }
         }
 
         // Receive results from the weather endpoint.

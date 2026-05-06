@@ -2,7 +2,7 @@
 
 // TODO: unfuck all of this.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
 use serde::{Deserialize, Deserializer};
 use chrono::NaiveDateTime;
@@ -105,6 +105,9 @@ pub struct Weather {
     /// received.
     rx: mpsc::Receiver<HourlyResult>,
 
+    /// A list of places that have currently outgoing requests.
+    pub outgoing: HashSet<String>,
+
     /// The current dataset.
     ///
     /// This can either be the dataset received from the remote server, or
@@ -174,14 +177,14 @@ impl Weather {
             tx: tx_req,
             rx: rx_res,
             current: HashMap::new(),
+            outgoing: HashSet::new(),
         }
     }
 
     /// Send a query for `place` to the server.
     pub fn send_query(&mut self, place: Place, ctx: egui::Context) {
-        // Save the query to make sure we know that we've sent it.
-        let place_string = place.to_string_coords();
-        self.current.entry(place_string).or_insert(None);
+        // Keep track of this outgoing query.
+        self.outgoing.insert(place.to_string_coords());
 
         // Send the query.
         let _ = self.tx.send(HourlyRequest { place, ctx, });
@@ -190,6 +193,7 @@ impl Weather {
     /// Drain responses from the remote server and save them in `self.current`
     pub fn drain_responses(&mut self) {
         while let Ok(result) = self.rx.try_recv() {
+            self.outgoing.remove(&result.place);
             self.current.insert(result.place, result.data);
         }
     }
