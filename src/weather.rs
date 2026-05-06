@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
 use serde::{Deserialize, Deserializer};
 use chrono::NaiveDateTime;
+use egui_plot::{Plot, Legend, Line, PlotPoints};
 use crate::geocoding::Place;
 
 // Wind Speed (10m): Average wind speed at 10 meters above ground.
@@ -57,9 +58,91 @@ pub struct Hourly {
     pub wind_gusts_10m:       Vec<f32>,
     pub precipitation:        Vec<f32>,
     pub dew_point_2m:         Vec<f32>,
-    pub cloud_cover_low:      Vec<u8>,
-    pub cloud_cover_mid:      Vec<u8>,
-    pub cloud_cover_high:     Vec<u8>,
+    pub cloud_cover_low:      Vec<f32>,
+    pub cloud_cover_mid:      Vec<f32>,
+    pub cloud_cover_high:     Vec<f32>,
+}
+
+impl Hourly {
+    pub fn plot(&self, ui: &mut egui::Ui) {
+        let temp = Line::new("temperature",
+            Self::make_points(&self.time, &self.temperature_2m));
+        let apparent = Line::new("apparent temperature",
+            Self::make_points(&self.time, &self.apparent_temperature));
+        let wind_speed = Line::new("wind speed",
+            Self::make_points(&self.time, &self.wind_speed_10m));
+        let wind_gusts = Line::new("wind gusts",
+            Self::make_points(&self.time, &self.wind_gusts_10m));
+        let precipitation = Line::new("precipitation",
+            Self::make_points(&self.time, &self.precipitation));
+        let dew = Line::new("dew point",
+            Self::make_points(&self.time, &self.dew_point_2m));
+        let cloud_low = Line::new("cloud cover low",
+            Self::make_points(&self.time, &self.cloud_cover_low));
+        let cloud_mid = Line::new("cloud cover mid",
+            Self::make_points(&self.time, &self.cloud_cover_mid));
+        let cloud_high = Line::new("cloud cover high",
+            Self::make_points(&self.time, &self.cloud_cover_high));
+
+        Plot::new("temperature")
+            .legend(Legend::default())
+            .height(200.0)
+            .show(ui, |ui| {
+                ui.line(temp);
+                ui.line(apparent);
+            });
+
+        Plot::new("wind")
+            .legend(Legend::default())
+            .height(200.0)
+            .show(ui, |ui| {
+                ui.line(wind_speed);
+                ui.line(wind_gusts);
+            });
+
+        Plot::new("precipitation")
+            .legend(Legend::default())
+            .height(150.0)
+            .show(ui, |ui| {
+                ui.line(precipitation);
+            });
+
+        Plot::new("dew point")
+            .legend(Legend::default())
+            .height(150.0)
+            .show(ui, |ui| {
+                ui.line(dew);
+            });
+
+        Plot::new("cloud low")
+            .legend(Legend::default())
+            .height(150.0)
+            .show(ui, |ui| {
+                ui.line(cloud_low);
+            });
+
+        Plot::new("cloud mid")
+            .legend(Legend::default())
+            .height(150.0)
+            .show(ui, |ui| {
+                ui.line(cloud_mid);
+            });
+
+        Plot::new("cloud high")
+            .legend(Legend::default())
+            .height(150.0)
+            .show(ui, |ui| {
+                ui.line(cloud_high);
+            });
+    }
+
+    fn make_points<'a>(times: &'a [NaiveDateTime], values: &'a [f32])
+            -> PlotPoints<'a> {
+        times.iter().zip(values.iter()).map(|(t, v)| {
+            // Use timestamp as X axis
+            [t.and_utc().timestamp() as f64, *v as f64]
+        }).collect()
+    }
 }
 
 impl Hourly {

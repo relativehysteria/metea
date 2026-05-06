@@ -101,7 +101,7 @@ impl App {
             .and_then(|o| o.as_ref());
 
         match hourly {
-            Some(hourly) => { ui.label(format!("{hourly:?}")); },
+            Some(hourly) => { hourly.plot(ui) },
             None => {},
         }
     }
