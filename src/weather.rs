@@ -1,7 +1,5 @@
 //! The open-meteo weather API.
 
-// TODO: unfuck all of this.
-
 use std::collections::{HashMap, HashSet};
 use std::sync::mpsc;
 use serde::{Deserialize, Deserializer};
@@ -47,104 +45,155 @@ struct WeatherData {
     hourly: Hourly,
 }
 
-/// Hourly values from the dataset, returned from the server.
-#[derive(Debug, Default, Clone, Deserialize)]
-pub struct Hourly {
-    #[serde(deserialize_with = "deserialize_naive_datetime")]
-    pub time:                 Vec<NaiveDateTime>,
-    pub temperature_2m:       Vec<f32>,
-    pub apparent_temperature: Vec<f32>,
-    pub wind_speed_10m:       Vec<f32>,
-    pub wind_gusts_10m:       Vec<f32>,
-    pub precipitation:        Vec<f32>,
-    pub dew_point_2m:         Vec<f32>,
-    pub cloud_cover_low:      Vec<f32>,
-    pub cloud_cover_mid:      Vec<f32>,
-    pub cloud_cover_high:     Vec<f32>,
+/// Generate the `Hourly` weather struct and its plotting implementation.
+///
+/// This macro defines:
+/// - the struct fields,
+/// - API URL argument generation,
+/// - field display labels,
+/// - and grouped egui plots,
+///
+/// from a single declarative definition.
+///
+/// # Syntax
+///
+/// ```ignore
+/// hourly_fields! {
+///     fields {
+///         field_name => "display label",
+///     }
+///
+///     plots {
+///         "plot title" => [field_name, other_field],
+///     }
+/// }
+/// ```
+macro_rules! hourly_fields {
+    (
+        fields {
+            $(
+                $field:ident => $label:literal
+            ),* $(,)?
+        }
+
+        plots {
+            $(
+                $plot_name:literal => [
+                    $( $plot_field:ident ),* $(,)?
+                ]
+            ),* $(,)?
+        }
+    ) => {
+        /// Hourly values from the dataset, returned from the server.
+        #[derive(Debug, Default, Clone, Deserialize)]
+        pub struct Hourly {
+            #[serde(deserialize_with = "deserialize_naive_datetime")]
+            pub time: Vec<NaiveDateTime>,
+
+            $(
+                pub $field: Vec<f32>,
+            )*
+        }
+
+        impl Hourly {
+            /// Get the API URL arguments that will be required to parse this
+            /// struct.
+            fn url_args() -> String {
+                vec![
+                    $(
+                        stringify!($field),
+                    )*
+                ].join(",")
+            }
+
+            /// Get the plot label for a specific field.
+            fn label(field: &str) -> &'static str {
+                match field {
+                    $(
+                        stringify!($field) => $label,
+                    )*
+                    _ => unreachable!(),
+                }
+            }
+
+            /// Draw all plots.
+            pub fn draw_plots(&self, ui: &mut egui::Ui) {
+                $(
+                    Self::plot($plot_name).show(ui, |ui| {
+                        $(
+                            ui.line(Line::new(
+                                Self::label(stringify!($plot_field)),
+                                Self::make_points(&self.$plot_field),
+                            ));
+                        )*
+                    });
+                )*
+            }
+
+            /// Create a plot for `name`.
+            fn plot<'a>(name: &'a str) -> Plot<'a> {
+                Plot::new(name)
+                    .legend(Legend::default())
+                    .height(200.0)
+                    .allow_axis_zoom_drag(false)
+                    .allow_zoom(false)
+                    .allow_scroll(false)
+                    .allow_drag(false)
+                    .sense(egui::Sense::empty())
+                    .x_axis_formatter(|x, _| {
+                        let hour = x.value as i64 % 24;
+                        format!("{:02}:00", hour)
+                    })
+            }
+
+            /// Create plot points for `values`.
+            fn make_points<'a>(values: &'a [f32]) -> PlotPoints<'a> {
+                values.iter()
+                    .enumerate()
+                    .map(|(idx, value)| [idx as f64, *value as f64])
+                    .collect()
+            }
+        }
+    };
 }
 
-impl Hourly {
-    pub fn draw_plots(&self, ui: &mut egui::Ui) {
-        let temp = Line::new("temperature",
-            Self::make_points(&self.temperature_2m));
-        let apparent = Line::new("apparent temperature",
-            Self::make_points(&self.apparent_temperature));
-        let wind_speed = Line::new("wind speed",
-            Self::make_points(&self.wind_speed_10m));
-        let wind_gusts = Line::new("wind gusts",
-            Self::make_points(&self.wind_gusts_10m));
-        let precipitation = Line::new("precipitation",
-            Self::make_points(&self.precipitation));
-        let dew = Line::new("dew point",
-            Self::make_points(&self.dew_point_2m));
-        let cloud_low = Line::new("cloud cover low",
-            Self::make_points(&self.cloud_cover_low));
-        let cloud_mid = Line::new("cloud cover mid",
-            Self::make_points(&self.cloud_cover_mid));
-        let cloud_high = Line::new("cloud cover high",
-            Self::make_points(&self.cloud_cover_high));
-
-        Self::plot("temperature").show(ui, |ui| {
-            ui.line(temp);
-            ui.line(apparent);
-        });
-
-        Self::plot("wind").show(ui, |ui| {
-            ui.line(wind_speed);
-            ui.line(wind_gusts);
-        });
-
-        Self::plot("precipitation").show(ui, |ui| {
-            ui.line(precipitation);
-        });
-
-        Self::plot("dew point").show(ui, |ui| {
-            ui.line(dew);
-        });
-
-        Self::plot("cloud low").show(ui, |ui| {
-            ui.line(cloud_low);
-            ui.line(cloud_mid);
-            ui.line(cloud_high);
-        });
+hourly_fields! {
+    fields {
+        temperature_2m       => "temperature",
+        apparent_temperature => "apparent temperature",
+        wind_speed_10m       => "wind speed",
+        wind_gusts_10m       => "wind gusts",
+        precipitation        => "precipitation",
+        dew_point_2m         => "dew point",
+        cloud_cover_low      => "cloud cover low",
+        cloud_cover_mid      => "cloud cover mid",
+        cloud_cover_high     => "cloud cover high",
     }
 
-    fn plot<'a>(name: &'a str) -> Plot<'a> {
-        // TODO: show every 6 hours
+    plots {
+        "temperature" => [
+            temperature_2m,
+            apparent_temperature,
+        ],
 
-        Plot::new(name)
-            .legend(Legend::default())
-            .height(200.0)
-            .allow_axis_zoom_drag(false)
-            .allow_zoom(false)
-            .allow_scroll(false)
-            .allow_drag(false)
-            .sense(egui::Sense::empty())
-            .x_axis_formatter(|x, _| {
-                let hour = x.value as i64 % 24;
-                format!("{:02}:00", hour)
-            })
-    }
+        "wind" => [
+            wind_speed_10m,
+            wind_gusts_10m,
+        ],
 
-    fn make_points<'a>(values: &'a [f32]) -> PlotPoints<'a> {
-        values.iter().enumerate().map(|(idx, value)| {
-            [idx as f64, *value as f64]
-        }).collect()
-    }
-}
+        "precipitation" => [
+            precipitation,
+        ],
 
-impl Hourly {
-    /// Get the API URL arguments that will be required to parse this struct.
-    fn url_args() -> &'static str {
-        "temperature_2m,\
-        apparent_temperature,\
-        wind_speed_10m,\
-        wind_gusts_10m,\
-        precipitation,\
-        dew_point_2m,\
-        cloud_cover_low,\
-        cloud_cover_mid,\
-        cloud_cover_high"
+        "dew point" => [
+            dew_point_2m,
+        ],
+
+        "cloud cover" => [
+            cloud_cover_low,
+            cloud_cover_mid,
+            cloud_cover_high,
+        ],
     }
 }
 
@@ -181,13 +230,8 @@ pub struct Weather {
 
     /// The current dataset.
     ///
-    /// This can either be the dataset received from the remote server, or
-    /// dataset that was loaded from the disk cache.
-    ///
-    /// The string here is the string representation of a place.
-    ///
     /// If the value is `None`, it means that we've attempted to send a request
-    /// but received no response.
+    /// but received no response yet.
     pub current: HashMap<String, Option<Hourly>>,
 }
 
