@@ -222,8 +222,12 @@ impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         // Safe space hack.
         // https://github.com/rust-windowing/winit/issues/3910
-        egui::Panel::top("safe_space_hack").show_inside(ui, |ui| {
+        egui::Panel::top("safe_space_top").show_inside(ui, |ui| {
             ui.set_height(32.0);
+        });
+
+        egui::Panel::bottom("safe_space_bottom").show_inside(ui, |ui| {
+            ui.set_height(22.0);
         });
 
         egui::CentralPanel::default().show_inside(ui, |ui| {
