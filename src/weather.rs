@@ -7,6 +7,9 @@ use chrono::NaiveDateTime;
 use egui_plot::{Plot, Legend, Line, PlotPoints};
 use crate::geocoding::Place;
 
+/// The number of days to include in the forecast.
+const FORECAST_DAYS: u8 = 3;
+
 // Wind Speed (10m): Average wind speed at 10 meters above ground.
 //   0-5 km/h -> calm
 //  5-15 km/h -> light breeze
@@ -142,7 +145,35 @@ macro_rules! hourly_fields {
                     .sense(egui::Sense::empty())
                     .x_axis_formatter(|x, _| {
                         let hour = x.value as i64 % 24;
-                        format!("{:02}:00", hour)
+                        if hour.is_positive() {
+                            format!("{:02}", hour)
+                        } else {
+                            "".to_string()
+                        }
+                    })
+                    .x_grid_spacer(|input| {
+                        let mut marks = Vec::new();
+
+                        let start = (input.bounds.0 / 6.0).floor() as i64 * 6;
+                        let end = input.bounds.1.ceil() as i64;
+
+                        let mut x = start;
+
+                        while x <= end {
+                            let step = 10.0
+                                +  5.0 * ((x % 6  == 0) as u8 as f64)
+                                + 15.0 * ((x % 12 == 0) as u8 as f64)
+                                + 30.0 * ((x % 24 == 0) as u8 as f64);
+
+                            marks.push(egui_plot::GridMark {
+                                value: x as f64,
+                                step_size: step,
+                            });
+
+                            x += 6;
+                        }
+
+                        marks
                     })
             }
 
@@ -237,10 +268,10 @@ pub struct Weather {
 
 impl Weather {
     /// Using `place`, get the URL of the endpoint that will service it.
-    fn endpoint_url(place: &Place) -> String {
+    fn endpoint_url(place: &Place, forecast_days: u8) -> String {
         let params = vec![
             "timezone=auto".to_string(),
-            "forecast_days=3".to_string(),
+            format!("forecast_days={}", forecast_days),
             format!("hourly={}", Hourly::url_args()),
             format!("latitude={:.4}", place.latitude()),
             format!("longitude={:.4}", place.longitude()),
@@ -265,7 +296,7 @@ impl Weather {
                 let place = request.place;
 
                 // Get the endpoint URL for this request.
-                let url = Self::endpoint_url(&place);
+                let url = Self::endpoint_url(&place, FORECAST_DAYS);
 
                 // Send the request to the server and attempt to parse the json.
                 let result = client.get(url).send()
