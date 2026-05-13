@@ -29,6 +29,7 @@ winit = { version = "0.30", default-features = false }
 [target.'cfg(not(target_os = "android"))'.dependencies]
 eframe = { version = "0.34", default-features = false, features = [ "wayland", "x11", "glow" ] }
 winit = "0.30"
+dirs = "6"
 
 [package.metadata.android]
 build_targets = ["aarch64-linux-android"]

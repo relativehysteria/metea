@@ -13,13 +13,17 @@ struct PersistedState {
 }
 
 impl PersistedState {
-    /// Load the state from the storage.
-    fn load(storage: &Storage) -> Option<Self> {
-        let data = std::fs::read(storage.places()).ok()?;
-        serde_json::from_slice(&data).ok()
+    /// Load the state from storage.
+    fn load(storage: &Storage) -> Self {
+        let path = storage.places();
+
+        std::fs::read(path)
+            .ok()
+            .and_then(|data| serde_json::from_slice(&data).ok())
+            .unwrap_or_default()
     }
 
-    /// Save the state to the storage.
+    /// Save the state to storage.
     fn save(&self, storage: &Storage) -> std::io::Result<()> {
         let data = serde_json::to_vec_pretty(self).unwrap();
         storage.write_atomic(&storage.places(), &data)
@@ -44,6 +48,20 @@ pub struct Platform {
 }
 
 impl Platform {
+    /// Invoke `eframe::run_native` using this platform.
+    pub fn run_native(self) -> eframe::Result {
+        #[allow(unused_mut)]
+        let mut options = eframe::NativeOptions::default();
+
+        #[cfg(target_os = "android")]
+        {
+            options.android_app = Some(self.app.clone());
+        }
+
+        eframe::run_native("metea", options,
+            Box::new(|_cc| Ok(Box::new(crate::App::new(self)))))
+    }
+
     // TODO: Figure out a better way if possible.
     /// If on mobile, minimize the window by moving the application to the back
     /// of the activity stack.
@@ -103,8 +121,7 @@ pub struct App {
 impl App {
     /// Create the application state.
     pub fn new(platform: Platform) -> Self {
-        let state = PersistedState::load(&platform.storage)
-            .expect("Couldn't load state from the storage");
+        let state = PersistedState::load(&platform.storage);
 
         Self {
             platform,
@@ -135,7 +152,9 @@ impl App {
             egui::Popup::menu(&title).align(egui::RectAlign::BOTTOM).show(|ui| {
                 if ui.button("REMOVE").clicked() {
                     self.state.places.remove(&place_string);
-                    let _ = self.state.save(&self.platform.storage);
+                    if let Err(e) = self.state.save(&self.platform.storage) {
+                        error!("Couldn't save state: {e:?}");
+                    }
                     self.screen = Screen::Selection;
                 }
             });

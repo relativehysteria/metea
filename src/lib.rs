@@ -1,4 +1,5 @@
 // TODO:
+// * Make writing to wrong files inexpressible.
 // * Don't push strings around -- use place struct instead..
 // * Figure out a better way to handle font other than writing heading()
 //   everywhere.

@@ -1,5 +1,3 @@
-use crate::Storage;
-
 #[unsafe(no_mangle)]
 pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
     // Initialize the logcat backend.
@@ -7,23 +5,15 @@ pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
         .with_max_level(log::LevelFilter::Info);
     android_logger::init_once(logger);
 
-    // Save the path to the internal app storage. We will pass it to the app and
-    // use it to save data.
-    let storage = app.internal_data_path()
-        .map(|path| Storage::new(path))
+    // Get path to the internal storage for this application.
+    let storage_dir = app.internal_data_path()
         .expect("Couldn't get internal storage to application");
 
-    let options = eframe::NativeOptions {
-        android_app: Some(app.clone()),
-        ..Default::default()
-    };
+    // Create the storage.
+    let storage = crate::Storage::new(storage_dir)
+        .expect("Couldn't create storage state");
 
-    // Create the platform
+    // Create the platform specific struct and run the app!
     let platform = crate::Platform { app, storage };
-
-    eframe::run_native(
-        "metea",
-        options,
-        Box::new(|_cc| Ok(Box::new(crate::App::new(platform)))),
-    ).unwrap()
+    platform.run_native().expect("Application returned error");
 }
