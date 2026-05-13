@@ -1,16 +1,16 @@
-//! Interface to the application's internal storage.
+//! Interface to the application's permanent filesystem storage.
 
 use std::path::{Path, PathBuf};
 
-/// Interface to the application's internal storage.
-pub struct InternalStorage {
-    /// Root path to the internal storage.
+/// Interface to the application's permanent storage.
+pub struct Storage {
+    /// Root path to the permanent storage.
     root: PathBuf,
 }
 
-impl InternalStorage {
+impl Storage {
     /// Create a new interface to the storage, using `root` as the root path to
-    /// the application's internal storage.
+    /// the application's permanent storage.
     pub fn new(root: PathBuf) -> Self {
         Self {
             root,

@@ -1,9 +1,8 @@
 use std::collections::HashSet;
 use serde::{Serialize, Deserialize};
-use winit::platform::android::activity::AndroidApp;
 use crate::geocoding::{GeoCoding, Place};
 use crate::weather::Weather;
-use crate::InternalStorage;
+use crate::Storage;
 
 /// State of the application that will be persisted across runs.
 #[derive(Default, Serialize, Deserialize)]
@@ -14,14 +13,14 @@ struct PersistedState {
 }
 
 impl PersistedState {
-    /// Load the state from the internal storage.
-    fn load(storage: &InternalStorage) -> Option<Self> {
+    /// Load the state from the storage.
+    fn load(storage: &Storage) -> Option<Self> {
         let data = std::fs::read(storage.places()).ok()?;
         serde_json::from_slice(&data).ok()
     }
 
-    /// Save the state to the internal storage.
-    fn save(&self, storage: &InternalStorage) -> std::io::Result<()> {
+    /// Save the state to the storage.
+    fn save(&self, storage: &Storage) -> std::io::Result<()> {
         let data = serde_json::to_vec_pretty(self).unwrap();
         storage.write_atomic(&storage.places(), &data)
     }
@@ -33,10 +32,60 @@ enum Screen {
     Weather(Place),
 }
 
+/// Struct that holds platform-specific data and that handles platform-specific
+/// actions.
+pub struct Platform {
+    /// A handle to the android application itself.
+    #[cfg(target_os = "android")]
+    pub app: winit::platform::android::activity::AndroidApp,
+
+    /// Permanent filesystem storage of the application.
+    pub storage: Storage,
+}
+
+impl Platform {
+    // TODO: Figure out a better way if possible.
+    /// If on mobile, minimize the window by moving the application to the back
+    /// of the activity stack.
+    fn minimize(&mut self) {
+        #[cfg(target_os = "android")]
+        {
+            let app = self.app.clone();
+
+            // Get access to the JVM.
+            let vm = unsafe { jni::JavaVM::from_raw(app.vm_as_ptr().cast()) };
+
+            // Attach the current thread, get the activity and call
+            // `moveTaskToBack()` safely.
+            let r = vm.attach_current_thread(|env| -> jni::errors::Result<()> {
+                let activity = unsafe {
+                    jni::objects::JObject::from_raw(
+                        &env,
+                        app.activity_as_ptr().cast(),
+                    )
+                };
+
+                env.call_method(
+                    activity,
+                    jni::jni_str!("moveTaskToBack"),
+                    jni::jni_sig!((bool) -> bool),
+                    &[jni::objects::JValue::Bool(true)],
+                )?;
+
+                Ok(())
+            });
+
+            if let Err(e) = r {
+                error!("Failed to move task to back: {e:?}");
+            }
+        }
+    }
+}
+
 /// The android metea application.
 pub struct App {
-    /// Interface to the application's internal storage.
-    internal_storage: InternalStorage,
+    /// Platform specific struct for handling platform specific code.
+    platform: Platform,
 
     /// State of the application that is persisted across runs.
     state: PersistedState,
@@ -49,28 +98,17 @@ pub struct App {
 
     /// The screen that should be currently shown.
     screen: Screen,
-
-    /// Handle to the application.
-    ///
-    /// Will be used to, for example, minimize the app, because sending a
-    /// minimize command to the viewport doesn't work :/
-    app: AndroidApp,
 }
 
 impl App {
     /// Create the application state.
-    pub fn new(
-        _cc: &eframe::CreationContext,
-        internal_storage: InternalStorage,
-        app: AndroidApp,
-    ) -> Self {
-        let state = PersistedState::load(&internal_storage)
-            .unwrap_or_default();
+    pub fn new(platform: Platform) -> Self {
+        let state = PersistedState::load(&platform.storage)
+            .expect("Couldn't load state from the storage");
 
         Self {
-            internal_storage,
+            platform,
             state,
-            app,
             screen: Screen::Selection,
             geocoding: GeoCoding::spawn_background_task(),
             weather: Weather::spawn_background_task(),
@@ -97,7 +135,7 @@ impl App {
             egui::Popup::menu(&title).align(egui::RectAlign::BOTTOM).show(|ui| {
                 if ui.button("REMOVE").clicked() {
                     self.state.places.remove(&place_string);
-                    let _ = self.state.save(&self.internal_storage);
+                    let _ = self.state.save(&self.platform.storage);
                     self.screen = Screen::Selection;
                 }
             });
@@ -152,7 +190,7 @@ impl App {
                     // Result selected; save it and clear the results.
                     if ui.button(label).clicked() {
                         self.state.places.insert(place);
-                        let _ = self.state.save(&self.internal_storage);
+                        let _ = self.state.save(&self.platform.storage);
                         clear = true;
                         break;
                     }
@@ -183,39 +221,6 @@ impl App {
             }
         });
     }
-
-    // TODO: Figure out a better way if possible.
-    /// Minimize the window by moving the task to back of the activity stack.
-    fn minimize(&mut self) {
-        let app = self.app.clone();
-
-        // Get access to the JVM.
-        let vm = unsafe { jni::JavaVM::from_raw(app.vm_as_ptr().cast()) };
-
-        // Attach the current thread, get the activity and call
-        // `moveTaskToBack()` safely.
-        let r = vm.attach_current_thread(|env| -> jni::errors::Result<()> {
-            let activity = unsafe {
-                jni::objects::JObject::from_raw(
-                    &env,
-                    app.activity_as_ptr().cast(),
-                )
-            };
-
-            env.call_method(
-                activity,
-                jni::jni_str!("moveTaskToBack"),
-                jni::jni_sig!((bool) -> bool),
-                &[jni::objects::JValue::Bool(true)],
-            )?;
-
-            Ok(())
-        });
-
-        if let Err(e) = r {
-            error!("Failed to move task to back: {e:?}");
-        }
-    }
 }
 
 impl eframe::App for App {
@@ -242,12 +247,17 @@ impl eframe::App for App {
     }
 
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        if ctx.input(|i| i.key_pressed(egui::Key::BrowserBack)) {
+        // When BrowserBack (back gesture on android) or escape is pressed,
+        // go to the previous screen.
+        let escape = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+        let browserback = ctx.input(|i| i.key_pressed(egui::Key::BrowserBack));
+
+        if escape || browserback {
             match self.screen {
                 // NOTE: As far as I know, we can't choose to not catch the
                 // `BrowserBack` action -- we always have to -- so Android
                 // doesn't minimize the window for us. We'll do it ourselves.
-                Screen::Selection  => self.minimize(),
+                Screen::Selection  => self.platform.minimize(),
                 Screen::Weather(_) => self.screen = Screen::Selection,
             }
         }

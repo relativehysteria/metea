@@ -19,11 +19,11 @@
 
 pub mod weather;
 pub mod geocoding;
-mod internal_storage;
+mod storage;
 mod app;
 
-pub use app::App;
-pub use internal_storage::InternalStorage;
+pub use app::{App, Platform};
+pub use storage::Storage;
 
 #[cfg(target_os = "android")]
 mod android_main;

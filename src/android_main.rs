@@ -1,4 +1,4 @@
-use crate::InternalStorage;
+use crate::Storage;
 
 #[unsafe(no_mangle)]
 pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
@@ -9,8 +9,8 @@ pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
 
     // Save the path to the internal app storage. We will pass it to the app and
     // use it to save data.
-    let internal_storage = app.internal_data_path()
-        .map(|path| InternalStorage::new(path))
+    let storage = app.internal_data_path()
+        .map(|path| Storage::new(path))
         .expect("Couldn't get internal storage to application");
 
     let options = eframe::NativeOptions {
@@ -18,9 +18,12 @@ pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
         ..Default::default()
     };
 
+    // Create the platform
+    let platform = crate::Platform { app, storage };
+
     eframe::run_native(
         "metea",
         options,
-        Box::new(|cc| Ok(Box::new(crate::App::new(cc, internal_storage, app)))),
+        Box::new(|_cc| Ok(Box::new(crate::App::new(platform)))),
     ).unwrap()
 }
