@@ -23,9 +23,9 @@ const FORECAST_DAYS: u8 = 3;
 //   +30+ km/h -> very strong and unstable
 //
 // Cloud Cover
-// * Low clouds (0-2 km): affect sunlight and "overcast feeling"
-// * Mid clouds (2-6 km): soften sunlight, partial shading
-// * High clouds (6+ km): thin clouds, often translucent
+// * Low clouds (0-2 km): strongest impact on sunlight and gloominess
+// * Mid clouds (2-6 km): soften sunlight, partial shading, textured skies
+// * High clouds (6+ km): thin/translucent clouds, halos, filteres sunlight
 //
 // Hourly Precipitation: Total amount of water falling from the sky in 1 hour.
 //    0 mm -> none
@@ -41,6 +41,24 @@ const FORECAST_DAYS: u8 = 3;
 // 10-15 °C -> slightly humid
 // 15-20 °C -> humid
 //   >20 °C -> very humid
+//
+// Light Radiation
+// * (GHI) Global Horizontal Irradiance
+//   - total sunlight reaching a flat horizontal surface
+//   - includes both direct sunlight and diffuse sky light
+//   - good indicator of overall daylight brightness and solar energy
+// * (DHI) Diffuse Horizontal Irradiance
+//   - sunlight scattered by the atmosphere, clouds, haze and dust
+//   - produces soft lighting and reduced shadows
+//   - penetrates deeper into plant canopies and creates more illumination
+// * (DNI) Direct Normal Irradiance
+//   - direct beam sunlight coming from straight from the sun
+//   - high DNI -> sharp shadows, intense sunlight, strong solar heating
+//   - important for tracking solar panels, photography, clear-sky conditions
+// * (GTI) Global Tilted Irradiance
+//   - total sunlight reaching a tilted surface
+//   - depends on panel tilt and orientation
+//   - most relevant for estimating actual solar panel energy production
 
 /// Weather dataset, returned from the server.
 #[derive(Debug, Clone, Deserialize)]
@@ -190,15 +208,22 @@ macro_rules! hourly_fields {
 
 hourly_fields! {
     fields {
-        temperature_2m       => "temperature",
-        apparent_temperature => "apparent temperature",
-        wind_speed_10m       => "wind speed",
-        wind_gusts_10m       => "wind gusts",
-        precipitation        => "precipitation",
-        dew_point_2m         => "dew point",
-        cloud_cover_low      => "cloud cover low",
-        cloud_cover_mid      => "cloud cover mid",
-        cloud_cover_high     => "cloud cover high",
+        temperature_2m                   => "temperature",
+        apparent_temperature             => "apparent temperature",
+        wind_speed_10m                   => "wind speed",
+        wind_gusts_10m                   => "wind gusts",
+        precipitation                    => "precipitation",
+        dew_point_2m                     => "dew point",
+        cloud_cover_low                  => "cloud cover low",
+        cloud_cover_mid                  => "cloud cover mid",
+        cloud_cover_high                 => "cloud cover high",
+        soil_moisture_0_to_1cm           => "soil moisture (0-1cm)",
+        soil_moisture_1_to_3cm           => "soil moisture (1-3cm)",
+        soil_moisture_3_to_9cm           => "soil moisture (3-9cm)",
+        soil_moisture_9_to_27cm          => "soil moisture (9-27cm)",
+        shortwave_radiation_instant      => "global horizontal irradiance",
+        direct_normal_irradiance_instant => "direct normal irradiance",
+        diffuse_radiation_instant        => "diffuse horizontal irradiance",
     }
 
     plots {
@@ -212,12 +237,25 @@ hourly_fields! {
             wind_gusts_10m,
         ],
 
+        "dew point" => [
+            dew_point_2m,
+        ],
+
         "precipitation" => [
             precipitation,
         ],
 
-        "dew point" => [
-            dew_point_2m,
+        "soil moisture" => [
+            soil_moisture_0_to_1cm,
+            soil_moisture_1_to_3cm,
+            soil_moisture_3_to_9cm,
+            soil_moisture_9_to_27cm,
+        ],
+
+        "solar radiation" => [
+            shortwave_radiation_instant,
+            direct_normal_irradiance_instant,
+            diffuse_radiation_instant,
         ],
 
         "cloud cover" => [
