@@ -1,0 +1,2 @@
+[alias]
+android = "apk run --release --lib"
