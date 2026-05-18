@@ -24,6 +24,18 @@ pub struct Place {
     admin1: Option<String>,
 }
 
+impl Place {
+    /// Get this place's latitude.
+    pub fn latitude(&self) -> f64 {
+        self.latitude.dequantize()
+    }
+
+    /// Get this place's longitude.
+    pub fn longitude(&self) -> f64 {
+        self.longitude.dequantize()
+    }
+}
+
 impl From<PlaceWire> for Place {
     fn from(wire: PlaceWire) -> Self {
         let PlaceWire { latitude, longitude, name, country, admin1 } = wire;
@@ -38,9 +50,8 @@ impl From<PlaceWire> for Place {
     }
 }
 
-impl Place {
-    /// Get the string representation of this place.
-    pub fn to_string(&self) -> String {
+impl std::fmt::Display for Place {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Format the country part.
         let country = if let Some(country) = &self.country {
             format!("{}, ", country)
@@ -56,18 +67,8 @@ impl Place {
         };
 
         // Format the whole string.
-        format!("{} ({}{}{}, {})",
+        write!(f, "{} ({}{}{}, {})",
             self.name, country, admin, self.latitude(), self.longitude())
-    }
-
-    /// Get this place's latitude.
-    pub fn latitude(&self) -> f64 {
-        self.latitude.dequantize()
-    }
-
-    /// Get this place's longitude.
-    pub fn longitude(&self) -> f64 {
-        self.longitude.dequantize()
     }
 }
 
@@ -134,9 +135,9 @@ pub struct GeoCoding {
 impl GeoCoding {
     /// Using `request`, get the URL of the endpoint that will service it.
     fn endpoint_url(request: &str) -> String {
-        let params = vec![
+        let params = [
             "count=10".to_string(),
-            format!("name={}", urlencoding::encode(&request)),
+            format!("name={}", urlencoding::encode(request)),
         ];
 
         format!(
@@ -172,7 +173,7 @@ impl GeoCoding {
 
                 // Convert the wire for into app form.
                 let places: Vec<Place> = places.into_iter()
-                    .map(|wire| Place::from(wire))
+                    .map(Place::from)
                     .collect();
 
                 // Send the result back to the application.

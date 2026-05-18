@@ -159,13 +159,10 @@ impl App {
 
         ui.add_space(20.0);
 
-        // Print the data for now.
-        let hourly = self.weather.current.get(&place)
-            .and_then(|o| o.as_ref());
-
-        match hourly {
-            Some(hourly) => { hourly.draw_plots(ui) },
-            None => {},
+        // Draw the plots.
+        let hourly = self.weather.current.get(&place).and_then(|o| o.as_ref());
+        if let Some(hourly) = hourly {
+            hourly.draw_plots(ui);
         }
     }
 
@@ -203,7 +200,7 @@ impl App {
                 for (idx, place) in self.geocoding.search_results.iter()
                     .enumerate()
                 {
-                    let label = egui::RichText::new(&place.to_string())
+                    let label = egui::RichText::new(place.to_string())
                         .heading();
 
                     // Result selected; save it and clear the results.

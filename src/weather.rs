@@ -307,7 +307,7 @@ pub struct Weather {
 impl Weather {
     /// Using `place`, get the URL of the endpoint that will service it.
     fn endpoint_url(place: &Place, forecast_days: u8) -> String {
-        let params = vec![
+        let params = [
             "timezone=auto".to_string(),
             format!("forecast_days={}", forecast_days),
             format!("hourly={}", Hourly::url_args()),
@@ -343,10 +343,7 @@ impl Weather {
                     .map(|data| data.hourly);
 
                 // Encode the result and send it back to the client.
-                let _ = tx_res.send(HourlyResult {
-                    place: place,
-                    data: result,
-                });
+                let _ = tx_res.send(HourlyResult { place, data: result, });
 
                 // Request a repaint. This is a little bit of a hack; the first
                 // request may trigger a repaint before the result is received,

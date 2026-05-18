@@ -1,3 +1,5 @@
+* Write some functions for changing the state and automatically writing it to
+  storage
 * Add floods/air quality.
 * Custom coordinates instead of using the geocoding API.
 * Better graph for cloud cover (I'd like them in one place, but the current
@@ -12,10 +14,8 @@
 * Switch to xbuild/apk2.
 * Figure out why on android we don't come back from app hibernation.
 * Cache. Reload data after one hour, or on app start.
-* Figure out HTTPS
-* Add admin1. This will require newtyping and just better id code.
+* Figure out HTTPS.
 * Make writing to wrong files inexpressible.
-* Don't push strings around -- use place struct instead..
 * Figure out a better way to handle font other than writing heading()
   everywhere.
 * Document all the fuckery; why contexts are needed in queries, etc.
