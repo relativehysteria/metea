@@ -1,7 +1,8 @@
 * Write some functions for changing the state and automatically writing it to
   storage
 * Add floods/air quality.
-* Custom coordinates instead of using the geocoding API.
+* Custom coordinates instead of using the geocoding API, as well as country code
+  for the geocoding API.
 * Better graph for cloud cover (I'd like them in one place, but the current
   graph is not great)
 * Add keyboard navigation on desktop.

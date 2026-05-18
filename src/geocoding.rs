@@ -3,6 +3,9 @@
 use std::sync::mpsc;
 use serde::{Serialize, Deserialize};
 
+/// The maximum number of results to be shown.
+const MAX_NUMBER_RESULTS: u8 = 50;
+
 /// Deserialized place information as returned from the server.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Place {
@@ -136,7 +139,7 @@ impl GeoCoding {
     /// Using `request`, get the URL of the endpoint that will service it.
     fn endpoint_url(request: &str) -> String {
         let params = [
-            "count=10".to_string(),
+            format!("count={MAX_NUMBER_RESULTS}"),
             format!("name={}", urlencoding::encode(request)),
         ];
 
