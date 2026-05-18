@@ -29,7 +29,7 @@
     which doesn't make much sense to be made global)
   - Units: temperature, wind speed, precipitation
   - Colorschemes.
- Figure out graph interactions:
+* Figure out graph interactions:
   - Add tooltips or explanations. Should possibly be an option, or be at the
      bottom of the page.
   - Toggle viewing variables when graphs are clicked.
