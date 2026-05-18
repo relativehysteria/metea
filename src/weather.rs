@@ -25,7 +25,7 @@ const FORECAST_DAYS: u8 = 3;
 // Cloud Cover
 // * Low clouds (0-2 km): strongest impact on sunlight and gloominess
 // * Mid clouds (2-6 km): soften sunlight, partial shading, textured skies
-// * High clouds (6+ km): thin/translucent clouds, halos, filteres sunlight
+// * High clouds (6+ km): thin/translucent clouds, halos, filters sunlight
 //
 // Hourly Precipitation: Total amount of water falling from the sky in 1 hour.
 //    0 mm -> none
@@ -273,7 +273,7 @@ hourly_fields! {
 
 /// Result sent from the background task back to the weather interface.
 struct HourlyResult {
-    place: String,
+    place: Place,
     data: Option<Hourly>,
 }
 
@@ -295,13 +295,13 @@ pub struct Weather {
     rx: mpsc::Receiver<HourlyResult>,
 
     /// A list of places that have currently outgoing requests.
-    pub outgoing: HashSet<String>,
+    pub outgoing: HashSet<Place>,
 
     /// The current dataset.
     ///
     /// If the value is `None`, it means that we've attempted to send a request
     /// but received no response yet.
-    pub current: HashMap<String, Option<Hourly>>,
+    pub current: HashMap<Place, Option<Hourly>>,
 }
 
 impl Weather {
@@ -344,7 +344,7 @@ impl Weather {
 
                 // Encode the result and send it back to the client.
                 let _ = tx_res.send(HourlyResult {
-                    place: place.to_string_coords(),
+                    place: place,
                     data: result,
                 });
 
@@ -371,26 +371,24 @@ impl Weather {
     /// `ctx` will be used to request a repaint of the viewport once the
     /// response (could be an error) is received.
     pub fn request_if_not_cached(&mut self, place: Place, ctx: egui::Context) {
-        let place_string = place.to_string_coords();
-
         // Get the current dataset.
         let current = self.current
-            .entry(place_string.clone())
+            .entry(place.clone())
             .or_insert(None);
 
         // If there's one in the cache, don't do anything.
         if current.is_some() { return; }
 
         // Only send a request if there's no outgoing request yet.
-        if !self.outgoing.contains(&place_string) {
-            self.send_query(place.clone(), ctx);
+        if !self.outgoing.contains(&place) {
+            self.send_query(place, ctx);
         }
     }
 
     /// Send a query for `place` to the server.
     pub fn send_query(&mut self, place: Place, ctx: egui::Context) {
         // Keep track of this outgoing query.
-        self.outgoing.insert(place.to_string_coords());
+        self.outgoing.insert(place.clone());
 
         // Send the query.
         let _ = self.tx.send(HourlyRequest { place, ctx, });

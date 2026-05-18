@@ -7,9 +7,8 @@ use crate::Storage;
 /// State of the application that will be persisted across runs.
 #[derive(Default, Serialize, Deserialize)]
 struct PersistedState {
-    // TODO: This should be newtyped.
     /// Saved places retrieved from the geocoding API.
-    places: HashSet<String>,
+    places: HashSet<Place>,
 }
 
 impl PersistedState {
@@ -134,8 +133,6 @@ impl App {
 
     /// Draw the weather screen.
     fn weather_screen(&mut self, ui: &mut egui::Ui, place: Place) {
-        let place_string = place.to_string_coords();
-
         // Send a request to the remote server if we don't have this place
         // cached yet.
         self.weather.request_if_not_cached(place.clone(), ui.ctx().clone());
@@ -151,7 +148,7 @@ impl App {
             // Show a popup to let the user mutate the place, e.g. remove it.
             egui::Popup::menu(&title).align(egui::RectAlign::BOTTOM).show(|ui| {
                 if ui.button("REMOVE").clicked() {
-                    self.state.places.remove(&place_string);
+                    self.state.places.remove(&place);
                     if let Err(e) = self.state.save(&self.platform.storage) {
                         error!("Couldn't save state: {e:?}");
                     }
@@ -163,7 +160,7 @@ impl App {
         ui.add_space(20.0);
 
         // Print the data for now.
-        let hourly = self.weather.current.get(&place_string)
+        let hourly = self.weather.current.get(&place)
             .and_then(|o| o.as_ref());
 
         match hourly {
@@ -199,17 +196,19 @@ impl App {
             // user selection. Once one result is selected, it is saved and
             // the results are cleared.
             let mut clear = text_input.lost_focus();
+            let mut selected = None;
             if !self.geocoding.search_results.is_empty() {
                 ui.label("Results:");
 
-                for place in &self.geocoding.search_results {
-                    let place = place.to_string_coords();
-                    let label = egui::RichText::new(&place).heading();
+                for (idx, place) in self.geocoding.search_results.iter()
+                    .enumerate()
+                {
+                    let label = egui::RichText::new(&place.to_string())
+                        .heading();
 
                     // Result selected; save it and clear the results.
                     if ui.button(label).clicked() {
-                        self.state.places.insert(place);
-                        let _ = self.state.save(&self.platform.storage);
+                        selected = Some(idx);
                         clear = true;
                         break;
                     }
@@ -219,8 +218,16 @@ impl App {
                 ui.add_space(10.0);
                 ui.separator();
 
+                // Save the place that the user has selected.
+                if let Some(idx) = selected {
+                    let place = self.geocoding.search_results.swap_remove(idx);
+                    self.state.places.insert(place);
+                    let _ = self.state.save(&self.platform.storage);
+                }
+
                 // The user has either selected a result or the text input lost
-                // focus; in either case, clear the search results.
+                // focus; in either case, clear the search results as we don't
+                // wanna show/use them anymore.
                 if clear { self.geocoding.search_results.clear(); }
             }
 
@@ -229,10 +236,10 @@ impl App {
             // Show saved coordinates.
             if !self.state.places.is_empty() {
                 for place in &self.state.places {
-                    let label = egui::RichText::new(place).heading();
+                    let label = egui::RichText::new(place.to_string())
+                        .heading();
                     if ui.label(label).clicked() {
-                        self.screen = Screen::Weather(Place::from_string(
-                                place).unwrap());
+                        self.screen = Screen::Weather(place.clone());
                     }
 
                     ui.add_space(10.0);

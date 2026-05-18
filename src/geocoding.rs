@@ -1,94 +1,115 @@
 //! The open-meteo geocoding API.
 
 use std::sync::mpsc;
-use serde::Deserialize;
+use serde::{Serialize, Deserialize};
 
-/// A list of places matching the query, returned from the server.
-#[derive(Debug, Clone, Deserialize)]
-pub struct GeoResponse {
-    results: Option<Vec<Place>>,
-}
-
-/// Place information, returned from the server.
-#[derive(Debug, Clone, Deserialize)]
+/// Deserialized place information as returned from the server.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Place {
     /// The name of this place.
     name: String,
 
     /// The latitude of this place.
-    latitude: f64,
+    latitude: LatLon,
 
     /// The longitude of this place.
-    longitude: f64,
+    longitude: LatLon,
 
     /// The country of this place.
     country: Option<String>,
+
+    /// The first level administrative area this location resides in.
+    ///
+    /// The API has admin1-4, but the first level should be enough.
+    admin1: Option<String>,
+}
+
+impl From<PlaceWire> for Place {
+    fn from(wire: PlaceWire) -> Self {
+        let PlaceWire { latitude, longitude, name, country, admin1 } = wire;
+
+        Self {
+            latitude: LatLon::quantize(latitude),
+            longitude: LatLon::quantize(longitude),
+            name,
+            country,
+            admin1,
+        }
+    }
 }
 
 impl Place {
-    /// Convert the formatted string form to this struct.
-    pub fn from_string(string: &str) -> Option<Self> {
-        // Split "name (....)"
-        let (name_part, rest) = string.split_once(" (")?;
-        let name = name_part.trim().to_string();
-        let rest = rest.strip_suffix(')')?;
-
-        // Split "country | lat, long"
-        let (country_part, coords_part) = rest.split_once(" | ")?;
-        let country_part = country_part.trim();
-
-        // Parse country (empty => None)
-        let country = if country_part.is_empty() {
-            None
+    /// Get the string representation of this place.
+    pub fn to_string(&self) -> String {
+        // Format the country part.
+        let country = if let Some(country) = &self.country {
+            format!("{}, ", country)
         } else {
-            Some(country_part.to_string())
+            "".to_string()
         };
 
-        // Split coordinates
-        let (lat_str, lon_str) = coords_part.split_once(',')?;
+        // Format the administrative area part.
+        let admin = if let Some(admin) = &self.admin1 {
+            format!("{} | ", admin)
+        } else {
+            "".to_string()
+        };
 
-        let latitude = lat_str.trim().parse::<f64>().ok()?;
-        let longitude = lon_str.trim().parse::<f64>().ok()?;
-
-        Some(Self {
-            name,
-            country,
-            latitude,
-            longitude,
-        })
+        // Format the whole string.
+        format!("{} ({}{}{}, {})",
+            self.name, country, admin, self.latitude(), self.longitude())
     }
 
-    /// Convert this struct into its formatted string form, including the
-    /// coordinates.
-    pub fn to_string_coords(&self) -> String {
-        format!(
-            "{} ({} | {}, {})",
-            self.name,
-            self.country.clone().unwrap_or_default(),
-            self.latitude,
-            self.longitude,
-        )
-    }
-
-    /// Convert this struct into its formatted string form, excluding the
-    /// coordinates.
-    pub fn to_string(&self) -> String {
-        format!(
-            "{} ({})",
-            self.name,
-            self.country.clone().unwrap_or_default(),
-        )
-    }
-
-    /// Get the latitude of this place.
+    /// Get this place's latitude.
     pub fn latitude(&self) -> f64 {
-        self.latitude
+        self.latitude.dequantize()
     }
 
-    /// Get the longitude of this place.
+    /// Get this place's longitude.
     pub fn longitude(&self) -> f64 {
-        self.longitude
+        self.longitude.dequantize()
     }
+}
+
+/// The integer representation of latitude/longitude.
+///
+/// Used to convert the `f64` latitude/longitude returned from the server into
+/// an integer with a stable bit pattern that can be used for hashing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[repr(transparent)]
+struct LatLon(i64);
+
+impl LatLon {
+    /// The open-meteo geocoding API uses coordinates with resolution to
+    /// 5 significant digits and so this is the scale we will use to convert the
+    /// float to integer.
+    const SCALE: f64 = 1e5;
+
+    /// Quantize a `float` as integer.
+    fn quantize(float: f64) -> Self {
+        Self((float * Self::SCALE).round() as i64)
+    }
+
+    /// Dequantize this value as its floating point representation.
+    fn dequantize(&self) -> f64 {
+        (self.0 as f64) / Self::SCALE
+    }
+}
+
+/// Raw place information returned from the server.
+#[derive(Debug, Clone, Deserialize)]
+struct PlaceWire {
+    name: String,
+    latitude: f64,
+    longitude: f64,
+    country: Option<String>,
+    admin1: Option<String>,
+}
+
+/// A list of places matching the geocoding query, returned from the server.
+#[derive(Debug, Clone, Deserialize)]
+struct GeoResponse {
+    results: Option<Vec<PlaceWire>>,
 }
 
 /// The system responsible for communicating with the remote open-meteo
@@ -144,10 +165,15 @@ impl GeoCoding {
                     .and_then(|r| r.json::<GeoResponse>());
 
                 // Normalize the results in case none were sent.
-                let places: Vec<Place> = match result {
+                let places: Vec<PlaceWire> = match result {
                     Ok(resp) => resp.results.unwrap_or_default(),
                     Err(_)   => vec![],
                 };
+
+                // Convert the wire for into app form.
+                let places: Vec<Place> = places.into_iter()
+                    .map(|wire| Place::from(wire))
+                    .collect();
 
                 // Send the result back to the application.
                 let _ = tx_res.send(places);
