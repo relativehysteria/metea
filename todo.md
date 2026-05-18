@@ -19,7 +19,6 @@
 * Figure out a better way to handle font other than writing heading()
   everywhere.
 * Document all the fuckery; why contexts are needed in queries, etc.
-* Move queries and drains into logic.
 * Handle drag scroll on mobile; currently it only works when dragging inside
   the graphs (which also works on desktop)
 * Implement settings

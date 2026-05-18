@@ -133,13 +133,6 @@ impl App {
 
     /// Draw the weather screen.
     fn weather_screen(&mut self, ui: &mut egui::Ui, place: Place) {
-        // Send a request to the remote server if we don't have this place
-        // cached yet.
-        self.weather.request_if_not_cached(place.clone(), ui.ctx().clone());
-
-        // Receive results from the weather endpoint.
-        self.weather.drain_responses();
-
         // Show the place title.
         ui.vertical_centered(|ui| {
             let title = egui::RichText::new(place.to_string()).heading();
@@ -168,9 +161,6 @@ impl App {
 
     /// Draw the selection screen.
     fn selection_screen(&mut self, ui: &mut egui::Ui) {
-        // Receive results from the geocoding endpoint.
-        self.geocoding.drain_responses();
-
         ui.vertical_centered(|ui| {
             // Create the text input field.
             let input = egui::TextEdit::singleline(
@@ -270,6 +260,23 @@ impl eframe::App for App {
     }
 
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Do screen-dependent, non-ui related stuff.
+        match &self.screen {
+            Screen::Selection => {
+                // Receive results from the geocoding endpoint.
+                self.geocoding.drain_responses();
+            },
+            Screen::Weather(place) => {
+                // Send a request to the remote server if we don't have this
+                // place cached yet.
+                self.weather
+                    .request_if_not_cached(place.clone(), ctx.clone());
+
+                // Receive results from the weather endpoint.
+                self.weather.drain_responses();
+            },
+        }
+
         // When BrowserBack (back gesture on android) or escape is pressed,
         // go to the previous screen.
         let escape = ctx.input(|i| i.key_pressed(egui::Key::Escape));
